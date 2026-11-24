@@ -1,13 +1,27 @@
 import json
 import sys
 from collections import OrderedDict
-from copy import deepcopy
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from unittest import mock, skipUnless
 from unittest.mock import patch
 
 import tablib
+from django.conf import settings
+from django.contrib.auth.models import User
+from django.core.exceptions import (
+    FieldDoesNotExist,
+    ImproperlyConfigured,
+    ValidationError,
+)
+from django.core.paginator import Paginator
+from django.db import IntegrityError
+from django.db.models import CharField, Count
+from django.db.utils import ConnectionDoesNotExist
+from django.test import TestCase, TransactionTestCase, skipUnlessDBFeature
+from django.utils.encoding import force_str
+from django.utils.html import strip_tags
+
 from core.models import (
     Author,
     Book,
@@ -29,21 +43,6 @@ from core.tests.resources import (
     WithDefaultResource,
 )
 from core.tests.utils import ignore_widget_deprecation_warning
-from django.conf import settings
-from django.contrib.auth.models import User
-from django.core.exceptions import (
-    FieldDoesNotExist,
-    ImproperlyConfigured,
-    ValidationError,
-)
-from django.core.paginator import Paginator
-from django.db import IntegrityError
-from django.db.models import CharField, Count
-from django.db.utils import ConnectionDoesNotExist
-from django.test import TestCase, TransactionTestCase, skipUnlessDBFeature
-from django.utils.encoding import force_str
-from django.utils.html import strip_tags
-
 from import_export import exceptions, fields, resources, results, widgets
 from import_export.instance_loaders import ModelInstanceLoader
 from import_export.options import ResourceOptions
@@ -313,7 +312,7 @@ class ModelResourceTest(TestCase):
 
         self.resource = _BookResource()
         # when queryset is supplied, it should be passed to before_export()
-        self.resource.export(queryset=Book.objects.all(), **{"a": 1})
+        self.resource.export(queryset=Book.objects.all(), a=1)
         self.assertEqual(Book.objects.count(), len(self.resource.qs))
         self.assertEqual(dict(a=1), self.resource.kwargs_)
 
@@ -461,10 +460,10 @@ class ModelResourceTest(TestCase):
     def test_ImproperlyConfigured_if_use_transactions_set_when_not_supported(
         self, mock_db_connections
     ):
-        class Features(object):
+        class Features:
             supports_transactions = False
 
-        class DummyConnection(object):
+        class DummyConnection:
             features = Features()
 
         dummy_connection = DummyConnection()
@@ -583,14 +582,13 @@ class ModelResourceTest(TestCase):
         dataset = tablib.Dataset(row, headers=["id"])
         with mock.patch(
             "import_export.resources.Field.save", side_effect=ValidationError("fail!")
-        ):
-            with self.assertRaisesRegex(ValidationError, "{'__all__': \\['fail!'\\]}"):
-                resource.import_data(
-                    dataset,
-                    dry_run=True,
-                    use_transactions=True,
-                    raise_errors=True,
-                )
+        ), self.assertRaisesRegex(ValidationError, "{'__all__': \\['fail!'\\]}"):
+            resource.import_data(
+                dataset,
+                dry_run=True,
+                use_transactions=True,
+                raise_errors=True,
+            )
 
     @ignore_widget_deprecation_warning
     def test_import_data_handles_widget_valueerrors_with_unicode_messages(self):
@@ -1190,7 +1188,7 @@ class ModelResourceTest(TestCase):
                     fields = ("author__nonexistent",)
 
         self.assertEqual(
-            "Book.author.nonexistent: Author has no field named " "'nonexistent'",
+            "Book.author.nonexistent: Author has no field named 'nonexistent'",
             cm.exception.args[0],
         )
 
